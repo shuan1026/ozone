@@ -32,6 +32,7 @@ import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
+import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ChecksumType;
 import org.apache.hadoop.hdds.scm.OzoneClientConfig;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
@@ -41,6 +42,7 @@ import org.apache.hadoop.hdds.scm.client.HddsClientUtils;
 import org.apache.hadoop.hdds.scm.container.ContainerID;
 import org.apache.hadoop.hdds.scm.container.ContainerInfo;
 import org.apache.hadoop.hdds.scm.container.common.helpers.ContainerNotOpenException;
+import org.apache.hadoop.hdds.scm.container.common.helpers.StorageContainerException;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
 import org.apache.hadoop.hdds.scm.pipeline.choose.algorithms.RoundRobinPipelineChoosePolicy;
 import org.apache.hadoop.hdds.scm.storage.BlockOutputStream;
@@ -203,8 +205,16 @@ public class TestOzoneClientRetriesOnExceptions {
             xceiverClientManager.acquireClient(pipeline);
         assertThat(containerList.contains(containerID));
         containerList.add(containerID);
-        xceiverClient.sendCommand(ContainerTestHelper
-            .getCreateContainerRequest(containerID, pipeline));
+        try {
+          xceiverClient.sendCommand(ContainerTestHelper
+              .getCreateContainerRequest(containerID, pipeline));
+        } catch (IOException e) {
+          Throwable sce = HddsClientUtils.containsException(e, StorageContainerException.class);
+          if (!(sce instanceof StorageContainerException)
+              || ((StorageContainerException) sce).getResult() != ContainerProtos.Result.CONTAINER_ALREADY_EXISTS) {
+            throw e;
+          }
+        }
         xceiverClientManager.releaseClient(xceiverClient, false);
       }
       key.write(data1);
