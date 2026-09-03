@@ -199,7 +199,7 @@ jobs:
             export OZONE_REPO_CACHED=true
           fi
 
-          args="-DexcludedGroups=slow -DskipShade -Drocks_tools_native"
+          args="-Dexcluded-test-groups=benchmark -DskipShade -Drocks_tools_native"
           args="$args $ratis_args"
           args="$args -pl :$SUBMODULE"
 
