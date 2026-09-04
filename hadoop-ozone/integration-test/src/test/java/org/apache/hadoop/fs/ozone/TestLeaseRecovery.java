@@ -73,7 +73,6 @@ import org.apache.hadoop.utils.FaultInjectorImpl;
 import org.apache.ozone.test.GenericTestUtils;
 import org.apache.ozone.test.GenericTestUtils.LogCapturer;
 import org.apache.ozone.test.OzoneTestBase;
-import org.apache.ozone.test.tag.Flaky;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -90,7 +89,6 @@ import org.slf4j.event.Level;
 /**
  * Test cases for recoverLease() API.
  */
-@Flaky("HDDS-11323")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class TestLeaseRecovery extends OzoneTestBase {
@@ -620,9 +618,8 @@ public class TestLeaseRecovery extends OzoneTestBase {
       int bufferSize = dataSize > data.length ? dataSize / 2 : dataSize;
       while (dataSize > 0) {
         byte[] readData = new byte[bufferSize];
-        int readBytes = fdis.read(readData);
-        assertEquals(readBytes, bufferSize);
-        assertArrayEquals(readData, data);
+        fdis.readFully(readData);
+        assertArrayEquals(data, readData);
         dataSize -= bufferSize;
       }
     }
