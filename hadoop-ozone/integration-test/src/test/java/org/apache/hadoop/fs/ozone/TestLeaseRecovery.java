@@ -73,6 +73,7 @@ import org.apache.hadoop.utils.FaultInjectorImpl;
 import org.apache.ozone.test.GenericTestUtils;
 import org.apache.ozone.test.GenericTestUtils.LogCapturer;
 import org.apache.ozone.test.OzoneTestBase;
+import org.apache.ozone.test.tag.Flaky;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -349,6 +350,7 @@ public class TestLeaseRecovery extends OzoneTestBase {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
+  @Flaky("HDDS-11323")
   public void testGetCommittedBlockLengthTimeout(boolean forceRecovery) throws Exception {
     // reduce read timeout
     OzoneConfiguration clientConf = new OzoneConfiguration(conf);
@@ -403,6 +405,7 @@ public class TestLeaseRecovery extends OzoneTestBase {
   }
 
   @Test
+  @Flaky("HDDS-11323")
   public void testGetCommittedBlockLengthWithException() throws Exception {
     int dataSize = 100;
     final byte[] data = getData(dataSize);
