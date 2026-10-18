@@ -247,6 +247,8 @@ class TestKeyDeletingService extends OzoneTestBase {
 
       final int keyCount = 100;
       createAndDeleteKeys(keyCount, 1);
+      // The delete has to reach RocksDB before getPendingDeletionKeys() can see it.
+      om.awaitDoubleBufferFlush();
 
       GenericTestUtils.waitFor(
           () -> getDeletedKeyCount() >= initialDeletedCount + keyCount,
