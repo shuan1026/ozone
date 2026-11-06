@@ -62,6 +62,7 @@ import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.regex.Matcher;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -93,6 +94,7 @@ import org.apache.hadoop.ozone.client.OzoneBucket;
 import org.apache.hadoop.ozone.client.OzoneKey;
 import org.apache.hadoop.ozone.client.OzoneKeyDetails;
 import org.apache.hadoop.ozone.client.OzoneVolume;
+import org.apache.hadoop.ozone.client.S3HeadObjectAttributes;
 import org.apache.hadoop.ozone.client.io.OzoneInputStream;
 import org.apache.hadoop.ozone.client.io.OzoneOutputStream;
 import org.apache.hadoop.ozone.om.OmConfig;
@@ -415,6 +417,7 @@ public class ObjectEndpoint extends ObjectOperationHandler {
       }
 
       long length = keyDetails.getDataSize();
+      String partContentRange = getPartContentRange(bucketName, keyPath, partNumber, keyDetails);
 
       LOG.debug("Data length of the key {} is {}", keyPath, length);
 
@@ -445,6 +448,9 @@ public class ObjectEndpoint extends ObjectOperationHandler {
 
         responseBuilder = Response.ok(output)
             .header(HttpHeaders.CONTENT_LENGTH, keyDetails.getDataSize());
+        if (partContentRange != null) {
+          responseBuilder.status(Status.PARTIAL_CONTENT).header(CONTENT_RANGE_HEADER, partContentRange);
+        }
 
       } else {
         long startOffset = rangeHeader.getStartOffset();
@@ -639,6 +645,25 @@ public class ObjectEndpoint extends ObjectOperationHandler {
   }
 
   /**
+   * Content-Range of the requested part within its multipart object, or null if the key is not a multipart key.
+   */
+  private String getPartContentRange(String bucketName, String keyPath, int partNumber, OzoneKey part)
+      throws IOException {
+    String eTag = part.getMetadata().get(OzoneConsts.ETAG);
+    if (partNumber == 0 || eTag == null || extractPartsCount(eTag) == null) {
+      return null;
+    }
+    S3HeadObjectAttributes attributes = getClientProtocol().headS3ObjectAttributes(bucketName, keyPath);
+    NavigableMap<Integer, Long> partSizes = attributes.getCompletedMultipartPartSizes();
+    if (!partSizes.containsKey(partNumber)) {
+      return null;
+    }
+    long start = partSizes.headMap(partNumber).values().stream().mapToLong(Long::longValue).sum();
+    return RANGE_HEADER_SUPPORTED_UNIT + " " + start + "-" + (start + part.getDataSize() - 1) + "/" +
+        attributes.getKey().getDataSize();
+  }
+
+  /**
    * Rest endpoint to check existence of an object in a bucket.
    * <p>
    * See: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectHEAD.html
@@ -654,6 +679,7 @@ public class ObjectEndpoint extends ObjectOperationHandler {
 
     OzoneKey key;
     RangeHeader rangeHeader = null;
+    String partContentRange;
     try {
       if (S3Owner.hasBucketOwnershipVerificationConditions(getHeaders())) {
         OzoneBucket bucket = context.getBucket();
@@ -676,6 +702,8 @@ public class ObjectEndpoint extends ObjectOperationHandler {
         auditReadSuccess(context.getAction());
         return conditionalResponse;
       }
+
+      partContentRange = getPartContentRange(bucketName, keyPath, partNumber, key);
 
       if (rangeHeaderVal != null) {
         rangeHeader = RangeHeaderParserUtil.parseRangeHeader(rangeHeaderVal, key.getDataSize());
@@ -711,6 +739,9 @@ public class ObjectEndpoint extends ObjectOperationHandler {
     ResponseBuilder response;
     if (rangeHeader == null || rangeHeader.isReadFull()) {
       response = Response.ok().status(HttpStatus.SC_OK).header(HttpHeaders.CONTENT_LENGTH, key.getDataSize());
+      if (partContentRange != null) {
+        response.status(Status.PARTIAL_CONTENT).header(CONTENT_RANGE_HEADER, partContentRange);
+      }
     } else {
       long startOffset = rangeHeader.getStartOffset();
       long endOffset = rangeHeader.getEndOffset();

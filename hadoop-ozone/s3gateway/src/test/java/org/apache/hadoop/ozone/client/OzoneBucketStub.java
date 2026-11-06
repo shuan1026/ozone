@@ -498,6 +498,46 @@ public final class OzoneBucketStub extends OzoneBucket {
     }
   }
 
+  /**
+   * Returns one completed multipart part when {@code partNumber > 0}.
+   */
+  public OzoneKeyDetails getKey(String key, int partNumber) throws IOException {
+    OzoneKeyDetails ozoneKeyDetails = getKey(key);
+    if (partNumber <= 0) {
+      return ozoneKeyDetails;
+    }
+    Map<Integer, Part> parts = partList.get(key);
+    if (parts == null) {
+      if (partNumber > 1) {
+        throw new OMException("Invalid part number " + partNumber,
+            ResultCodes.INVALID_PART);
+      }
+      return ozoneKeyDetails;
+    }
+    Part part = parts.get(partNumber);
+    if (part == null) {
+      throw new OMException("Invalid part number " + partNumber,
+          ResultCodes.INVALID_PART);
+    }
+    byte[] content = part.getContent();
+    return new OzoneKeyDetails(
+        ozoneKeyDetails.getVolumeName(),
+        ozoneKeyDetails.getBucketName(),
+        ozoneKeyDetails.getName(),
+        content.length,
+        ozoneKeyDetails.getCreationTime().toEpochMilli(),
+        ozoneKeyDetails.getModificationTime().toEpochMilli(),
+        ozoneKeyDetails.getOzoneKeyLocations(),
+        ozoneKeyDetails.getReplicationConfig(),
+        ozoneKeyDetails.getMetadata(),
+        ozoneKeyDetails.getFileEncryptionInfo(),
+        () -> new OzoneInputStream(new ByteArrayInputStream(content)),
+        ozoneKeyDetails.isFile(),
+        ozoneKeyDetails.getOwner(),
+        ozoneKeyDetails.getTags(),
+        ozoneKeyDetails.getGeneration());
+  }
+
   @Override
   public OzoneKey headObject(String key) throws IOException {
     return headObject(key, 0);
@@ -513,7 +553,14 @@ public final class OzoneBucketStub extends OzoneBucket {
     }
 
     Map<Integer, Part> parts = partList.get(key);
-    if (parts == null || !parts.containsKey(partNumber)) {
+    if (parts == null) {
+      if (partNumber > 1) {
+        throw new OMException("Invalid part number " + partNumber,
+            ResultCodes.INVALID_PART);
+      }
+      return toHeadOzoneKey(ozoneKeyDetails, ozoneKeyDetails.getDataSize());
+    }
+    if (!parts.containsKey(partNumber)) {
       throw new OMException("Invalid part number " + partNumber,
           ResultCodes.INVALID_PART);
     }
