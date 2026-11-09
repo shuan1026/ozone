@@ -63,6 +63,7 @@ import org.apache.hadoop.ozone.om.helpers.OmLCRule;
 import org.apache.hadoop.ozone.om.helpers.OmLifecycleConfiguration;
 import org.apache.hadoop.ozone.om.helpers.OmMultipartInfo;
 import org.apache.hadoop.ozone.om.helpers.OmMultipartUploadCompleteInfo;
+import org.apache.hadoop.ozone.om.helpers.OmPartRange;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.Time;
 import org.apache.ratis.util.function.CheckedRunnable;
@@ -498,6 +499,46 @@ public final class OzoneBucketStub extends OzoneBucket {
     }
   }
 
+  /**
+   * Returns one completed multipart part when {@code partNumber > 0}, as OM does.
+   */
+  public OzoneKeyDetails getKey(String key, int partNumber) throws IOException {
+    OzoneKeyDetails ozoneKeyDetails = getKey(key);
+    if (partNumber <= 0) {
+      return ozoneKeyDetails;
+    }
+    Map<Integer, Part> parts = partList.get(key);
+    if (parts == null) {
+      if (partNumber > 1) {
+        throw new OMException("Invalid part number " + partNumber, ResultCodes.INVALID_PART);
+      }
+      return ozoneKeyDetails;
+    }
+    Part part = parts.get(partNumber);
+    if (part == null) {
+      throw new OMException("Invalid part number " + partNumber, ResultCodes.INVALID_PART);
+    }
+    byte[] content = part.getContent();
+    OzoneKeyDetails partDetails = new OzoneKeyDetails(
+        ozoneKeyDetails.getVolumeName(),
+        ozoneKeyDetails.getBucketName(),
+        ozoneKeyDetails.getName(),
+        content.length,
+        ozoneKeyDetails.getCreationTime().toEpochMilli(),
+        ozoneKeyDetails.getModificationTime().toEpochMilli(),
+        ozoneKeyDetails.getOzoneKeyLocations(),
+        ozoneKeyDetails.getReplicationConfig(),
+        ozoneKeyDetails.getMetadata(),
+        ozoneKeyDetails.getFileEncryptionInfo(),
+        () -> new OzoneInputStream(new ByteArrayInputStream(content)),
+        ozoneKeyDetails.isFile(),
+        ozoneKeyDetails.getOwner(),
+        ozoneKeyDetails.getTags(),
+        ozoneKeyDetails.getGeneration());
+    partDetails.setPartRange(partRange(parts, partNumber, ozoneKeyDetails.getDataSize()));
+    return partDetails;
+  }
+
   @Override
   public OzoneKey headObject(String key) throws IOException {
     return headObject(key, 0);
@@ -513,11 +554,30 @@ public final class OzoneBucketStub extends OzoneBucket {
     }
 
     Map<Integer, Part> parts = partList.get(key);
-    if (parts == null || !parts.containsKey(partNumber)) {
+    if (parts == null) {
+      if (partNumber > 1) {
+        throw new OMException("Invalid part number " + partNumber, ResultCodes.INVALID_PART);
+      }
+      return toHeadOzoneKey(ozoneKeyDetails, ozoneKeyDetails.getDataSize());
+    }
+    if (!parts.containsKey(partNumber)) {
       throw new OMException("Invalid part number " + partNumber,
           ResultCodes.INVALID_PART);
     }
-    return toHeadOzoneKey(ozoneKeyDetails, parts.get(partNumber).getContent().length);
+    OzoneKey part = toHeadOzoneKey(ozoneKeyDetails, parts.get(partNumber).getContent().length);
+    part.setPartRange(partRange(parts, partNumber, ozoneKeyDetails.getDataSize()));
+    return part;
+  }
+
+  /** Position of {@code partNumber} within the completed key: the parts before it come first. */
+  private static OmPartRange partRange(Map<Integer, Part> parts, int partNumber, long keyDataSize) {
+    long offset = 0;
+    for (Map.Entry<Integer, Part> entry : parts.entrySet()) {
+      if (entry.getKey() < partNumber) {
+        offset += entry.getValue().getContent().length;
+      }
+    }
+    return new OmPartRange(offset, keyDataSize);
   }
 
   /**

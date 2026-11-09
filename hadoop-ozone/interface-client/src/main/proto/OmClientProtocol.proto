@@ -1455,6 +1455,16 @@ message GetKeyInfoResponse {
   optional VolumeInfo volumeInfo = 2;
   optional string UserPrincipal = 3;
   optional BucketLayoutProto bucketLayout = 4;
+  // Set when KeyArgs.multipartNumber selected one part of a multipart key.
+  optional PartRange partRange = 5;
+}
+
+// Position of one part within its multipart key.
+message PartRange {
+  // Offset of the first byte of the part within the key.
+  required uint64 offset = 1;
+  // Size of the whole key. KeyInfo.dataSize is the size of the part.
+  required uint64 keyDataSize = 2;
 }
 
 message RenameKeysRequest {

@@ -1073,7 +1073,7 @@ public class TestOMMetadataReader {
     when(ozoneManager.getS3VolumeContext(true)).thenReturn(new S3VolumeContext(
         OmVolumeArgs.newBuilder().setVolume("vol").setAdminName("admin").setOwnerName("owner").build(), "user"));
     when(keyManager.getKeyInfo(any(OmKeyArgs.class), any(ResolvedBucket.class), any()))
-        .thenReturn(mock(OmKeyInfo.class));
+        .thenReturn(new KeyInfoWithPartRange(mock(OmKeyInfo.class), null));
     return new OmMetadataReader(keyManager, mock(PrefixManager.class), ozoneManager, mock(org.slf4j.Logger.class),
         mock(AuditLogger.class), mock(OmMetadataReaderMetrics.class), null);
   }

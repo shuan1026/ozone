@@ -4693,7 +4693,7 @@ abstract class OzoneRpcClientTests extends OzoneTestBase {
         bucket.getVolumeName(), bucket.getName(),
         "", bucket.getBucketLayout());
     OmKeyInfo omKeyInfo = ozoneManager.getKeyManager().getKeyInfo(keyArgs,
-        resolvedBucket, UUID.randomUUID().toString());
+        resolvedBucket, UUID.randomUUID().toString()).getKeyInfo();
 
     OmKeyLocationInfoGroup latestVersionLocations =
         omKeyInfo.getLatestVersionLocations();

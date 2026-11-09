@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.anySet;
 import static org.mockito.Mockito.mock;
@@ -538,7 +539,7 @@ class TestKeyManagerUnit extends OzoneTestBase {
         .setKeyName("keyOne")
         .build();
     OmKeyInfo keyInfo = keyManager.getKeyInfo(keyArgs,
-        resolveBucket(keyArgs), "test");
+        resolveBucket(keyArgs), "test").getKeyInfo();
     final OmKeyLocationInfo blockLocation1 = keyInfo
         .getLatestVersionLocations().getBlocksLatestVersionOnly().get(0);
     assertEquals(blockID1, blockLocation1.getBlockID());
@@ -554,7 +555,7 @@ class TestKeyManagerUnit extends OzoneTestBase {
         .setKeyName("keyTwo")
         .build();
     OmKeyInfo keyInfo2 = keyManager.getKeyInfo(keyArgs,
-        resolveBucket(keyArgs), "test");
+        resolveBucket(keyArgs), "test").getKeyInfo();
     OmKeyLocationInfo blockLocation2 = keyInfo2
         .getLatestVersionLocations().getBlocksLatestVersionOnly().get(0);
     assertEquals(blockID2, blockLocation2.getBlockID());
@@ -571,7 +572,7 @@ class TestKeyManagerUnit extends OzoneTestBase {
         .setForceUpdateContainerCacheFromSCM(true)
         .build();
     keyInfo2 = keyManager.getKeyInfo(keyArgs,
-        resolveBucket(keyArgs), "test");
+        resolveBucket(keyArgs), "test").getKeyInfo();
     blockLocation2 = keyInfo2
         .getLatestVersionLocations().getBlocksLatestVersionOnly().get(0);
     assertEquals(blockID2, blockLocation2.getBlockID());
@@ -579,6 +580,39 @@ class TestKeyManagerUnit extends OzoneTestBase {
     // Ensure SCM is called.
     verify(containerClient, times(2))
         .getContainerWithPipelineBatch(containerIDs);
+  }
+
+  @Test
+  public void getKeyInfoForMultipartPart() throws IOException {
+    final String volume = volumeName();
+    insertVolume(volume);
+    insertBucket(volume, "bucketOne");
+    // Parts 1, 2 and 3 of 3, 5 and 2 bytes; part 2 has two blocks.
+    insertMultipartKey(volume, "bucketOne", "keyOne",
+        Arrays.asList(partBlock(1, 3), partBlock(2, 4), partBlock(2, 1), partBlock(3, 2)));
+
+    OmKeyArgs keyArgs = new Builder()
+        .setVolumeName(volume)
+        .setBucketName("bucketOne")
+        .setKeyName("keyOne")
+        .setMultipartUploadPartNumber(2)
+        .setHeadOp(true)
+        .build();
+    KeyInfoWithPartRange part = keyManager.getKeyInfo(keyArgs, resolveBucket(keyArgs), "test");
+    assertEquals(5, part.getKeyInfo().getDataSize());
+    assertEquals(2, part.getKeyInfo().getLatestVersionLocations().getBlocksLatestVersionOnly().size());
+    assertEquals(3, part.getPartRange().getOffset());
+    assertEquals(10, part.getPartRange().getKeyDataSize());
+
+    keyArgs = new Builder()
+        .setVolumeName(volume)
+        .setBucketName("bucketOne")
+        .setKeyName("keyOne")
+        .setHeadOp(true)
+        .build();
+    KeyInfoWithPartRange wholeKey = keyManager.getKeyInfo(keyArgs, resolveBucket(keyArgs), "test");
+    assertEquals(10, wholeKey.getKeyInfo().getDataSize());
+    assertNull(wholeKey.getPartRange());
   }
 
   private ResolvedBucket resolveBucket(OmKeyArgs keyArgs) {
@@ -679,6 +713,31 @@ class TestKeyManagerUnit extends OzoneTestBase {
             .setAcls(Collections.emptyList())
         .build();
     OMRequestTestUtils.addKeyToOM(metadataManager, keyInfo);
+  }
+
+  private void insertMultipartKey(String volumeName, String bucketName, String keyName,
+      List<OmKeyLocationInfo> partBlocks) throws IOException {
+    final OmKeyInfo keyInfo = new OmKeyInfo.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .setOmKeyLocationInfos(singletonList(new OmKeyLocationInfoGroup(0, partBlocks, true)))
+        .setCreationTime(Time.now())
+        .setModificationTime(Time.now())
+        .setDataSize(partBlocks.stream().mapToLong(OmKeyLocationInfo::getLength).sum())
+        .setReplicationConfig(RatisReplicationConfig.getInstance(ReplicationFactor.THREE))
+        .setAcls(Collections.emptyList())
+        .build();
+    OMRequestTestUtils.addKeyToOM(metadataManager, keyInfo);
+  }
+
+  private static OmKeyLocationInfo partBlock(int partNumber, long length) {
+    return new OmKeyLocationInfo.Builder()
+        .setBlockID(new BlockID(CONTAINER_ID.incrementAndGet(), 1L))
+        .setOffset(0)
+        .setLength(length)
+        .setPartNumber(partNumber)
+        .build();
   }
 
   private void insertBucket(String volumeName, String bucketName)

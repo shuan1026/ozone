@@ -86,6 +86,13 @@ public class S3ClientFactory {
     return builder.build();
   }
 
+  /** Creates an S3AsyncClient (AWS SDK V2) that transfers objects in parts. */
+  public S3AsyncClient createMultipartS3AsyncClientV2() throws Exception {
+    S3AsyncClientBuilder builder = S3AsyncClient.builder().multipartEnabled(true);
+    configureCommon(builder, true);
+    return builder.build();
+  }
+
   private <T extends S3BaseClientBuilder<T, ?>> void configureCommon(T builder, boolean enablePathStyle)
       throws Exception {
     final String accessKey = "user";

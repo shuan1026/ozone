@@ -2857,6 +2857,30 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase implements Clus
   }
 
   @Test
+  public void testMultipartDownloadToFile(@TempDir Path tempDir) throws Exception {
+    final String bucketName = getBucketName();
+    final String keyName = getKeyName();
+
+    s3Client.createBucket(b -> b.bucket(bucketName));
+
+    File multipartUploadFile = Files.createFile(tempDir.resolve("multipartupload.txt")).toFile();
+
+    // Parts of 5 MB, 5 MB and 2 MB.
+    createFile(multipartUploadFile, (int) (12 * MB));
+
+    multipartUpload(bucketName, keyName, multipartUploadFile, (int) (5 * MB), new HashMap<>(), Collections.emptyList());
+
+    // A multipart client reads the object by part number, and writes each part to the file at the offset given by
+    // the Content-Range of the response.
+    Path downloadPath = tempDir.resolve("download.txt");
+    try (S3AsyncClient multipartClient = new S3ClientFactory(cluster.getConf()).createMultipartS3AsyncClientV2()) {
+      multipartClient.getObject(b -> b.bucket(bucketName).key(keyName), downloadPath).join();
+    }
+
+    assertArrayEquals(Files.readAllBytes(multipartUploadFile.toPath()), Files.readAllBytes(downloadPath));
+  }
+
+  @Test
   public void testHeadObjectReturnsTaggingCount() {
     final String bucketName = getBucketName();
     final String keyName = getKeyName();

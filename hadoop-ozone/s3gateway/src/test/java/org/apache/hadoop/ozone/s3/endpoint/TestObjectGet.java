@@ -22,19 +22,24 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.hadoop.ozone.s3.S3GatewayConfigKeys.OZONE_S3G_FSO_DIRECTORY_CREATION_ENABLED;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.assertErrorResponse;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.assertSucceeds;
+import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.completeMultipartUpload;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.get;
+import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.initiateMultipartUpload;
 import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.put;
+import static org.apache.hadoop.ozone.s3.endpoint.EndpointTestUtils.uploadPart;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.INVALID_ARGUMENT;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.INVALID_RANGE;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.INVALID_REQUEST;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.INVALID_URI;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.NO_SUCH_KEY;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.PRECOND_FAILED;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.CONTENT_RANGE_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.CUSTOM_METADATA_HEADER_PREFIX;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.IF_MATCH_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.IF_MODIFIED_SINCE_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.IF_NONE_MATCH_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.IF_UNMODIFIED_SINCE_HEADER;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.MP_PARTS_COUNT;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.RANGE_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_COUNT_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_HEADER;
@@ -52,6 +57,8 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.List;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
@@ -152,6 +159,38 @@ public class TestObjectGet {
     assertThat(exception.getErrorMessage())
         .isEqualTo("Cannot specify both Range header and partNumber query parameter");
     assertThat(rest.getMetrics().getGetKeyFailure() - failureBefore).isEqualTo(1);
+  }
+
+  @Test
+  public void testGetPartNumberOnMultipartObjectReturns206() throws Exception {
+    String key = "mpu-unequal-parts";
+    completeTwoPartUpload(key, "AAA", "BBBBB");
+
+    rest.queryParamsForTest().setInt(S3Consts.QueryParams.PART_NUMBER, 1);
+    Response part1 = get(rest, BUCKET_NAME, key);
+    assertEquals(Response.Status.PARTIAL_CONTENT.getStatusCode(), part1.getStatus());
+    assertEquals("3", part1.getHeaderString(HttpHeaders.CONTENT_LENGTH));
+    assertEquals("bytes 0-2/8", part1.getHeaderString(CONTENT_RANGE_HEADER));
+    assertEquals("2", part1.getHeaderString(MP_PARTS_COUNT));
+    assertEquals("AAA", readBody(part1));
+
+    rest.queryParamsForTest().setInt(S3Consts.QueryParams.PART_NUMBER, 2);
+    Response part2 = get(rest, BUCKET_NAME, key);
+    assertEquals(Response.Status.PARTIAL_CONTENT.getStatusCode(), part2.getStatus());
+    assertEquals("5", part2.getHeaderString(HttpHeaders.CONTENT_LENGTH));
+    assertEquals("bytes 3-7/8", part2.getHeaderString(CONTENT_RANGE_HEADER));
+    assertEquals("2", part2.getHeaderString(MP_PARTS_COUNT));
+    assertEquals("BBBBB", readBody(part2));
+  }
+
+  @Test
+  public void testGetPartNumberOnNonMultipartStays200() throws Exception {
+    rest.queryParamsForTest().setInt(S3Consts.QueryParams.PART_NUMBER, 1);
+    Response response = get(rest, BUCKET_NAME, KEY_NAME);
+    assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+    assertEquals(String.valueOf(CONTENT.length()), response.getHeaderString(HttpHeaders.CONTENT_LENGTH));
+    assertNull(response.getHeaderString(CONTENT_RANGE_HEADER));
+    assertNull(response.getHeaderString(MP_PARTS_COUNT));
   }
 
   @Test
@@ -512,6 +551,21 @@ public class TestObjectGet {
     bucket.createDirectory(keyPath);
 
     assertErrorResponse(NO_SUCH_KEY, () -> get(rest, BUCKET_NAME, keyPath));
+  }
+
+  private void completeTwoPartUpload(String key, String part1, String part2) throws IOException, OS3Exception {
+    String uploadID = initiateMultipartUpload(rest, BUCKET_NAME, key);
+    List<CompleteMultipartUploadRequest.Part> parts = Arrays.asList(
+        uploadPart(rest, BUCKET_NAME, key, 1, uploadID, part1),
+        uploadPart(rest, BUCKET_NAME, key, 2, uploadID, part2));
+    completeMultipartUpload(rest, BUCKET_NAME, key, uploadID, parts);
+    rest.queryParamsForTest().unset(S3Consts.QueryParams.UPLOAD_ID);
+  }
+
+  private static String readBody(Response response) throws IOException {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ((StreamingOutput) response.getEntity()).write(out);
+    return out.toString(UTF_8);
   }
 
   private static String formatHttpDate(Instant instant) {

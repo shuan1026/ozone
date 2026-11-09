@@ -1025,6 +1025,7 @@ public abstract class TestOzoneClientMultipartUploadWithFSO implements ClusterFo
             .getS3KeyDetails(s3Bucket.getName(), keyName, 0);
     List<OzoneKeyLocation> ozoneKeyLocations = s3KeyDetailsWithAllParts.getOzoneKeyLocations();
     assertEquals(6, ozoneKeyLocations.size());
+    assertNull(s3KeyDetailsWithAllParts.getPartRange());
   }
 
   @Test
@@ -1056,12 +1057,18 @@ public abstract class TestOzoneClientMultipartUploadWithFSO implements ClusterFo
 //  for integration-test is 4MB
     OzoneKeyDetails s3KeyDetailsOneParts = ozClient.getProxy().getS3KeyDetails(bucketName, keyName, 1);
     assertEquals(2, s3KeyDetailsOneParts.getOzoneKeyLocations().size());
+    assertEquals(0, s3KeyDetailsOneParts.getPartRange().getOffset());
+    assertEquals(3L * OzoneConsts.OM_MULTIPART_MIN_SIZE, s3KeyDetailsOneParts.getPartRange().getKeyDataSize());
 
     OzoneKeyDetails s3KeyDetailsTwoParts = ozClient.getProxy().getS3KeyDetails(bucketName, keyName, 2);
     assertEquals(2, s3KeyDetailsTwoParts.getOzoneKeyLocations().size());
+    assertEquals(OzoneConsts.OM_MULTIPART_MIN_SIZE, s3KeyDetailsTwoParts.getPartRange().getOffset());
+    assertEquals(3L * OzoneConsts.OM_MULTIPART_MIN_SIZE, s3KeyDetailsTwoParts.getPartRange().getKeyDataSize());
 
     OzoneKeyDetails s3KeyDetailsThreeParts = ozClient.getProxy().getS3KeyDetails(bucketName, keyName, 3);
     assertEquals(2, s3KeyDetailsThreeParts.getOzoneKeyLocations().size());
+    assertEquals(2L * OzoneConsts.OM_MULTIPART_MIN_SIZE, s3KeyDetailsThreeParts.getPartRange().getOffset());
+    assertEquals(3L * OzoneConsts.OM_MULTIPART_MIN_SIZE, s3KeyDetailsThreeParts.getPartRange().getKeyDataSize());
   }
 
   @Test

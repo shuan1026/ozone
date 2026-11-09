@@ -40,6 +40,11 @@ public class KeyInfoWithVolumeContext {
 
   private final Optional<BucketLayout> bucketLayout;
 
+  /**
+   * Position of the returned part within the whole key; empty unless the key was read with a part number.
+   */
+  private final Optional<OmPartRange> partRange;
+
   public KeyInfoWithVolumeContext(OmVolumeArgs volumeArgs,
                                   String userPrincipal,
                                   OmKeyInfo keyInfo) {
@@ -50,10 +55,19 @@ public class KeyInfoWithVolumeContext {
                                   String userPrincipal,
                                   OmKeyInfo keyInfo,
                                   BucketLayout bucketLayout) {
+    this(volumeArgs, userPrincipal, keyInfo, bucketLayout, null);
+  }
+
+  private KeyInfoWithVolumeContext(OmVolumeArgs volumeArgs,
+                                   String userPrincipal,
+                                   OmKeyInfo keyInfo,
+                                   BucketLayout bucketLayout,
+                                   OmPartRange partRange) {
     this.volumeArgs = Optional.ofNullable(volumeArgs);
     this.userPrincipal = Optional.ofNullable(userPrincipal);
     this.keyInfo = keyInfo;
     this.bucketLayout = Optional.ofNullable(bucketLayout);
+    this.partRange = Optional.ofNullable(partRange);
   }
 
   public static KeyInfoWithVolumeContext fromProtobuf(
@@ -65,6 +79,7 @@ public class KeyInfoWithVolumeContext {
         .setKeyInfo(OmKeyInfo.getFromProtobuf(proto.getKeyInfo()))
         .setBucketLayout(proto.hasBucketLayout()
             ? BucketLayout.fromProto(proto.getBucketLayout()) : null)
+        .setPartRange(proto.hasPartRange() ? OmPartRange.getFromProtobuf(proto.getPartRange()) : null)
         .build();
   }
 
@@ -74,6 +89,7 @@ public class KeyInfoWithVolumeContext {
     userPrincipal.ifPresent(builder::setUserPrincipal);
     builder.setKeyInfo(keyInfo.getProtobuf(clientVersion));
     bucketLayout.ifPresent(layout -> builder.setBucketLayout(layout.toProto()));
+    partRange.ifPresent(range -> builder.setPartRange(range.getProtobuf()));
     return builder.build();
   }
 
@@ -93,6 +109,10 @@ public class KeyInfoWithVolumeContext {
     return bucketLayout;
   }
 
+  public Optional<OmPartRange> getPartRange() {
+    return partRange;
+  }
+
   public static Builder newBuilder() {
     return new Builder();
   }
@@ -105,6 +125,7 @@ public class KeyInfoWithVolumeContext {
     private String userPrincipal;
     private OmKeyInfo keyInfo;
     private BucketLayout bucketLayout;
+    private OmPartRange partRange;
 
     public Builder setVolumeArgs(OmVolumeArgs volumeArgs) {
       this.volumeArgs = volumeArgs;
@@ -126,8 +147,13 @@ public class KeyInfoWithVolumeContext {
       return this;
     }
 
+    public Builder setPartRange(OmPartRange partRange) {
+      this.partRange = partRange;
+      return this;
+    }
+
     public KeyInfoWithVolumeContext build() {
-      return new KeyInfoWithVolumeContext(volumeArgs, userPrincipal, keyInfo, bucketLayout);
+      return new KeyInfoWithVolumeContext(volumeArgs, userPrincipal, keyInfo, bucketLayout, partRange);
     }
   }
 }

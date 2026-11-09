@@ -324,6 +324,7 @@ public class OmSnapshot implements IOmMetadataReader, Closeable {
         .setVolumeArgs(k.getVolumeArgs().orElse(null))
         .setUserPrincipal(k.getUserPrincipal().orElse(null))
         .setBucketLayout(k.getBucketLayout().orElse(null))
+        .setPartRange(k.getPartRange().orElse(null))
         .build();
   }
 

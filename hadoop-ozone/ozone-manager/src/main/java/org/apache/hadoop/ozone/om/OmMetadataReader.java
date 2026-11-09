@@ -209,11 +209,12 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
       }
 
       metrics.incNumGetKeyInfo();
-      OmKeyInfo keyInfo = keyManager.getKeyInfo(resolvedArgs, bucket,
+      KeyInfoWithPartRange keyInfo = keyManager.getKeyInfo(resolvedArgs, bucket,
               OmMetadataReader.getClientAddress());
       KeyInfoWithVolumeContext.Builder builder = KeyInfoWithVolumeContext
           .newBuilder()
-          .setKeyInfo(keyInfo)
+          .setKeyInfo(keyInfo.getKeyInfo())
+          .setPartRange(keyInfo.getPartRange())
           .setBucketLayout(Objects.requireNonNullElse(
               bucket.bucketLayout(), BucketLayout.DEFAULT));
       s3VolumeContext.ifPresent(context -> {

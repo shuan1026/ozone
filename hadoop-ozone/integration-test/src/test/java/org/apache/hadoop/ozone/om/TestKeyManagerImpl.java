@@ -1473,7 +1473,7 @@ public class TestKeyManagerImpl {
             .setKeyName(keyName)
             .setMultipartUploadPartNumber(0)
             .build();
-    OmKeyInfo omKeyInfo = keyManager.getKeyInfo(keyArgs, RESOLVED_BUCKET, "test");
+    OmKeyInfo omKeyInfo = keyManager.getKeyInfo(keyArgs, RESOLVED_BUCKET, "test").getKeyInfo();
     assertEquals(keyName, omKeyInfo.getKeyName());
     assertNotNull(omKeyInfo.getLatestVersionLocations());
 
@@ -1499,7 +1499,7 @@ public class TestKeyManagerImpl {
             .setKeyName(keyName)
             .setMultipartUploadPartNumber(3)
             .build();
-    OmKeyInfo omKeyInfo = keyManager.getKeyInfo(keyArgs, RESOLVED_BUCKET, "test");
+    OmKeyInfo omKeyInfo = keyManager.getKeyInfo(keyArgs, RESOLVED_BUCKET, "test").getKeyInfo();
     assertEquals(keyName, omKeyInfo.getKeyName());
     assertNotNull(omKeyInfo.getLatestVersionLocations());
 

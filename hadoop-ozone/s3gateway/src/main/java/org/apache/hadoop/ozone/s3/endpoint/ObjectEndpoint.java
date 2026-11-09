@@ -102,6 +102,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmMultipartCommitUploadPartInfo;
 import org.apache.hadoop.ozone.om.helpers.OmMultipartInfo;
 import org.apache.hadoop.ozone.om.helpers.OmMultipartUploadCompleteInfo;
+import org.apache.hadoop.ozone.om.helpers.OmPartRange;
 import org.apache.hadoop.ozone.s3.HeaderPreprocessor;
 import org.apache.hadoop.ozone.s3.MultiDigestInputStream;
 import org.apache.hadoop.ozone.s3.exception.OS3Exception;
@@ -445,6 +446,9 @@ public class ObjectEndpoint extends ObjectOperationHandler {
 
         responseBuilder = Response.ok(output)
             .header(HttpHeaders.CONTENT_LENGTH, keyDetails.getDataSize());
+        if (keyDetails.getPartRange() != null) {
+          responseBuilder.status(Status.PARTIAL_CONTENT).header(CONTENT_RANGE_HEADER, partContentRange(keyDetails));
+        }
 
       } else {
         long startOffset = rangeHeader.getStartOffset();
@@ -639,6 +643,15 @@ public class ObjectEndpoint extends ObjectOperationHandler {
   }
 
   /**
+   * Content-Range of a key read as one part of a multipart key, in the coordinates of the whole key.
+   */
+  private static String partContentRange(OzoneKey part) {
+    OmPartRange range = part.getPartRange();
+    long end = range.getOffset() + part.getDataSize() - 1;
+    return RANGE_HEADER_SUPPORTED_UNIT + " " + range.getOffset() + "-" + end + "/" + range.getKeyDataSize();
+  }
+
+  /**
    * Rest endpoint to check existence of an object in a bucket.
    * <p>
    * See: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectHEAD.html
@@ -711,6 +724,9 @@ public class ObjectEndpoint extends ObjectOperationHandler {
     ResponseBuilder response;
     if (rangeHeader == null || rangeHeader.isReadFull()) {
       response = Response.ok().status(HttpStatus.SC_OK).header(HttpHeaders.CONTENT_LENGTH, key.getDataSize());
+      if (key.getPartRange() != null) {
+        response.status(Status.PARTIAL_CONTENT).header(CONTENT_RANGE_HEADER, partContentRange(key));
+      }
     } else {
       long startOffset = rangeHeader.getStartOffset();
       long endOffset = rangeHeader.getEndOffset();

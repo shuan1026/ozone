@@ -44,6 +44,7 @@ import static org.apache.hadoop.ozone.s3.util.S3Consts.CUSTOM_METADATA_HEADER_PR
 import static org.apache.hadoop.ozone.s3.util.S3Consts.IF_MATCH_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.IF_NONE_MATCH_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.IF_UNMODIFIED_SINCE_HEADER;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.MP_PARTS_COUNT;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.RANGE_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.RANGE_HEADER_SUPPORTED_UNIT;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_COUNT_HEADER;
@@ -61,6 +62,8 @@ import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Stream;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MultivaluedHashMap;
@@ -166,7 +169,7 @@ public class TestObjectHead {
     completeMultipartUpload(keyEndpoint, bucketName, RANGE_KEY, uploadId, singletonList(part));
     keyEndpoint.queryParamsForTest().unset(S3Consts.QueryParams.UPLOAD_ID);
     keyEndpoint.queryParamsForTest().setInt(S3Consts.QueryParams.PART_NUMBER, 2);
-    assertSucceeds(() -> keyEndpoint.head(bucketName, RANGE_KEY));
+    assertStatus(HttpStatus.SC_PARTIAL_CONTENT, () -> keyEndpoint.head(bucketName, RANGE_KEY));
 
     keyEndpoint.queryParamsForTest().set(S3Consts.QueryParams.PART_NUMBER, partNumber);
     when(headers.getHeaderString(RANGE_HEADER)).thenReturn(range);
@@ -177,6 +180,36 @@ public class TestObjectHead {
     assertThat(exception.getErrorMessage())
         .isEqualTo("Cannot specify both Range header and partNumber query parameter");
     assertThat(keyEndpoint.getMetrics().getHeadKeyFailure() - failureBefore).isEqualTo(1);
+  }
+
+  @Test
+  public void testHeadPartNumberOnMultipartObjectReturns206() throws Exception {
+    String key = "mpu-unequal-parts";
+    completeTwoPartUpload(key, "AAA", "BBBBB");
+
+    keyEndpoint.queryParamsForTest().setInt(S3Consts.QueryParams.PART_NUMBER, 1);
+    Response part1 = keyEndpoint.head(bucketName, key);
+    assertEquals(HttpStatus.SC_PARTIAL_CONTENT, part1.getStatus());
+    assertEquals("3", part1.getHeaderString(HttpHeaders.CONTENT_LENGTH));
+    assertEquals("bytes 0-2/8", part1.getHeaderString(CONTENT_RANGE_HEADER));
+    assertEquals("2", part1.getHeaderString(MP_PARTS_COUNT));
+
+    keyEndpoint.queryParamsForTest().setInt(S3Consts.QueryParams.PART_NUMBER, 2);
+    Response part2 = keyEndpoint.head(bucketName, key);
+    assertEquals(HttpStatus.SC_PARTIAL_CONTENT, part2.getStatus());
+    assertEquals("5", part2.getHeaderString(HttpHeaders.CONTENT_LENGTH));
+    assertEquals("bytes 3-7/8", part2.getHeaderString(CONTENT_RANGE_HEADER));
+    assertEquals("2", part2.getHeaderString(MP_PARTS_COUNT));
+  }
+
+  @Test
+  public void testHeadPartNumberOnNonMultipartStays200() throws Exception {
+    createKey("plain-key");
+    keyEndpoint.queryParamsForTest().setInt(S3Consts.QueryParams.PART_NUMBER, 1);
+    Response response = keyEndpoint.head(bucketName, "plain-key");
+    assertEquals(HttpStatus.SC_OK, response.getStatus());
+    assertNull(response.getHeaderString(CONTENT_RANGE_HEADER));
+    assertNull(response.getHeaderString(MP_PARTS_COUNT));
   }
 
   @ParameterizedTest
@@ -430,6 +463,15 @@ public class TestObjectHead {
         Arguments.of("bytes=0-" + Long.MAX_VALUE, HttpStatus.SC_PARTIAL_CONTENT, 10L, "bytes 0-9/10"),
         Arguments.of("bytes=0-9223372036854775808", HttpStatus.SC_OK, 10L, null),
         Arguments.of("bytes=0-99999999999999999999", HttpStatus.SC_OK, 10L, null));
+  }
+
+  private void completeTwoPartUpload(String key, String part1, String part2) throws IOException, OS3Exception {
+    String uploadID = initiateMultipartUpload(keyEndpoint, bucketName, key);
+    List<CompleteMultipartUploadRequest.Part> parts = Arrays.asList(
+        uploadPart(keyEndpoint, bucketName, key, 1, uploadID, part1),
+        uploadPart(keyEndpoint, bucketName, key, 2, uploadID, part2));
+    completeMultipartUpload(keyEndpoint, bucketName, key, uploadID, parts);
+    keyEndpoint.queryParamsForTest().unset(S3Consts.QueryParams.UPLOAD_ID);
   }
 
   private byte[] createKey(String keyPath) throws IOException {

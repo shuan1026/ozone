@@ -168,6 +168,7 @@ import org.apache.hadoop.ozone.om.helpers.OmMultipartUpload;
 import org.apache.hadoop.ozone.om.helpers.OmMultipartUploadList;
 import org.apache.hadoop.ozone.om.helpers.OmMultipartUploadListParts;
 import org.apache.hadoop.ozone.om.helpers.OmPartInfo;
+import org.apache.hadoop.ozone.om.helpers.OmPartRange;
 import org.apache.hadoop.ozone.om.helpers.OzoneAclUtil;
 import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
@@ -582,7 +583,7 @@ public class KeyManagerImpl implements KeyManager {
     Objects.requireNonNull(args, "args == null");
 
     OmKeyInfo value = captureLatencyNs(metrics.getLookupReadKeyInfoLatencyNs(),
-        () -> readKeyInfo(args, bucket.bucketLayout()));
+        () -> readKeyInfo(args, bucket.bucketLayout()).getKeyInfo());
 
     // If operation is head, do not perform any additional steps based on flags.
     // As head operation does not need any of those details.
@@ -606,7 +607,7 @@ public class KeyManagerImpl implements KeyManager {
     return value;
   }
 
-  private OmKeyInfo readKeyInfo(OmKeyArgs args, BucketLayout bucketLayout)
+  private KeyInfoWithPartRange readKeyInfo(OmKeyArgs args, BucketLayout bucketLayout)
       throws IOException {
     String volumeName = args.getVolumeName();
     String bucketName = args.getBucketName();
@@ -653,6 +654,7 @@ public class KeyManagerImpl implements KeyManager {
     if (args.getLatestVersionLocation()) {
       slimLocationVersion(value);
     }
+    OmPartRange partRange = null;
     int partNumberParam = args.getMultipartUploadPartNumber();
     if (partNumberParam > 0) {
       OmKeyLocationInfoGroup latestLocationVersion = value.getLatestVersionLocations();
@@ -670,6 +672,13 @@ public class KeyManagerImpl implements KeyManager {
               INVALID_PART);
         }
 
+        // The part starts after the blocks of the parts before it; read them before they are dropped below.
+        long partOffset = latestLocationVersion.getBlocksLatestVersionOnly().stream()
+            .filter(it -> it.getPartNumber() < partNumberParam)
+            .mapToLong(BlockLocationInfo::getLength)
+            .sum();
+        partRange = new OmPartRange(partOffset, value.getDataSize());
+
         value.updateLocationInfoList(currentLocations, true, true);
 
         value.setDataSize(currentLocations.stream()
@@ -683,7 +692,7 @@ public class KeyManagerImpl implements KeyManager {
       }
       // Non-multipart key with partNumber == 1 returns the whole object.
     }
-    return value;
+    return new KeyInfoWithPartRange(value, partRange);
   }
 
   private OmKeyInfo getOmKeyInfo(String volumeName, String bucketName,
@@ -1045,7 +1054,7 @@ public class KeyManagerImpl implements KeyManager {
     Objects.requireNonNull(args, "args == null");
 
     OmKeyInfo value = captureLatencyNs(metrics.getLookupReadKeyInfoLatencyNs(),
-        () -> readKeyInfo(args, bucket.bucketLayout()));
+        () -> readKeyInfo(args, bucket.bucketLayout()).getKeyInfo());
 
     return value.getTags();
   }
@@ -2495,13 +2504,14 @@ public class KeyManagerImpl implements KeyManager {
   }
 
   @Override
-  public OmKeyInfo getKeyInfo(OmKeyArgs args, ResolvedBucket bucket,
+  public KeyInfoWithPartRange getKeyInfo(OmKeyArgs args, ResolvedBucket bucket,
       String clientAddress) throws IOException {
     Objects.requireNonNull(args, "args == null");
 
-    OmKeyInfo value = captureLatencyNs(
+    KeyInfoWithPartRange result = captureLatencyNs(
         metrics.getGetKeyInfoReadKeyInfoLatencyNs(),
         () -> readKeyInfo(args, bucket.bucketLayout()));
+    OmKeyInfo value = result.getKeyInfo();
 
     // If operation is head, do not perform any additional steps based on flags.
     // As head operation does not need any of those details.
@@ -2521,7 +2531,7 @@ public class KeyManagerImpl implements KeyManager {
             () -> sortDatanodes(clientAddress, value));
       }
     }
-    return value;
+    return result;
   }
 
   private void refreshPipelineFromCache(Iterable<OmKeyInfo> keyInfos)

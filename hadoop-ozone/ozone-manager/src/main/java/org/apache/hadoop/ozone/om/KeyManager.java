@@ -85,10 +85,11 @@ public interface KeyManager extends OzoneManagerFS, IOzoneAcl {
    * @param args the args of the key provided by client.
    * @param clientAddress a hint to key manager, order the datanode in returned
    *                      pipeline by distance between client and datanode.
-   * @return a OmKeyInfo instance client uses to talk to container.
+   * @return a OmKeyInfo instance client uses to talk to container, restricted to the part selected by
+   *         {@code args.getMultipartUploadPartNumber()} together with the position of that part in the key.
    * @throws IOException
    */
-  OmKeyInfo getKeyInfo(OmKeyArgs args, ResolvedBucket buctket,
+  KeyInfoWithPartRange getKeyInfo(OmKeyArgs args, ResolvedBucket buctket,
       String clientAddress) throws IOException;
 
   /**

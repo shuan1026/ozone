@@ -2023,15 +2023,19 @@ public class RpcClient implements ClientProtocol {
   @Override
   public OzoneKeyDetails getS3KeyDetails(String bucketName, String keyName,
                                          int partNumber) throws IOException {
-    return getOzoneKeyDetails(
-        getS3PartOmKeyInfo(bucketName, keyName, partNumber, false));
+    KeyInfoWithVolumeContext keyInfo = getS3PartKeyInfoWithVolumeContext(bucketName, keyName, partNumber, false);
+    OzoneKeyDetails keyDetails = getOzoneKeyDetails(keyInfo.getKeyInfo());
+    keyInfo.getPartRange().ifPresent(keyDetails::setPartRange);
+    return keyDetails;
   }
 
   @Override
   public OzoneKey headS3Object(String bucketName, String keyName,
                                int partNumber) throws IOException {
-    return OzoneKey.fromKeyInfo(
-        getS3PartOmKeyInfo(bucketName, keyName, partNumber, true));
+    KeyInfoWithVolumeContext keyInfo = getS3PartKeyInfoWithVolumeContext(bucketName, keyName, partNumber, true);
+    OzoneKey key = OzoneKey.fromKeyInfo(keyInfo.getKeyInfo());
+    keyInfo.getPartRange().ifPresent(key::setPartRange);
+    return key;
   }
 
   @Override
@@ -2056,24 +2060,22 @@ public class RpcClient implements ClientProtocol {
     return new S3HeadObjectAttributes(OzoneKey.fromKeyInfo(keyInfo), partSizes, bucketLayout);
   }
 
-  private OmKeyInfo getS3PartOmKeyInfo(String bucketName, String keyName,
+  private KeyInfoWithVolumeContext getS3PartKeyInfoWithVolumeContext(String bucketName, String keyName,
       int partNumber, boolean isHeadOp) throws IOException {
-    OmKeyInfo keyInfo;
     if (OzoneManagerVersion.S3_PART_AWARE_GET.isSupportedBy(getOmVersion())) {
-      keyInfo = getS3PartKeyInfo(bucketName, keyName, partNumber, isHeadOp);
-    } else {
-      keyInfo = getS3KeyInfo(bucketName, keyName, isHeadOp);
-      List<OmKeyLocationInfo> filteredKeyLocationInfo = keyInfo
-          .getLatestVersionLocations().getBlocksLatestVersionOnly().stream()
-          .filter(omKeyLocationInfo -> omKeyLocationInfo.getPartNumber() ==
-                                       partNumber)
-          .collect(Collectors.toList());
-      keyInfo.updateLocationInfoList(filteredKeyLocationInfo, true, true);
-      keyInfo.setDataSize(filteredKeyLocationInfo.stream()
-          .mapToLong(OmKeyLocationInfo::getLength)
-          .sum());
+      return getS3PartKeyInfo(bucketName, keyName, partNumber, isHeadOp);
     }
-    return keyInfo;
+    OmKeyInfo keyInfo = getS3KeyInfo(bucketName, keyName, isHeadOp);
+    List<OmKeyLocationInfo> filteredKeyLocationInfo = keyInfo
+        .getLatestVersionLocations().getBlocksLatestVersionOnly().stream()
+        .filter(omKeyLocationInfo -> omKeyLocationInfo.getPartNumber() ==
+                                     partNumber)
+        .collect(Collectors.toList());
+    keyInfo.updateLocationInfoList(filteredKeyLocationInfo, true, true);
+    keyInfo.setDataSize(filteredKeyLocationInfo.stream()
+        .mapToLong(OmKeyLocationInfo::getLength)
+        .sum());
+    return KeyInfoWithVolumeContext.newBuilder().setKeyInfo(keyInfo).build();
   }
 
   @Nonnull
@@ -2106,7 +2108,7 @@ public class RpcClient implements ClientProtocol {
   }
 
   @Nonnull
-  private OmKeyInfo getS3PartKeyInfo(
+  private KeyInfoWithVolumeContext getS3PartKeyInfo(
       String bucketName, String keyName, int partNumber, boolean isHeadOp)
       throws IOException {
     verifyBucketName(bucketName);
@@ -2127,7 +2129,7 @@ public class RpcClient implements ClientProtocol {
     KeyInfoWithVolumeContext keyInfoWithS3Context =
         ozoneManagerClient.getKeyInfo(keyArgs, true);
     keyInfoWithS3Context.getUserPrincipal().ifPresent(this::updateS3Principal);
-    return keyInfoWithS3Context.getKeyInfo();
+    return keyInfoWithS3Context;
   }
 
   @Override

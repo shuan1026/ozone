@@ -24,6 +24,7 @@ import java.util.Map;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationType;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OmPartRange;
 
 /**
  * A class that encapsulates OzoneKey.
@@ -69,6 +70,11 @@ public class OzoneKey {
    * Indicator if key is a file.
    */
   private final boolean isFile;
+
+  /**
+   * Position of this part within the whole key, set when the key was read with a multipart part number.
+   */
+  private OmPartRange partRange;
 
   @SuppressWarnings("parameternumber")
   public OzoneKey(String volumeName, String bucketName,
@@ -181,6 +187,19 @@ public class OzoneKey {
 
   public void setMetadata(Map<String, String> metadata) {
     this.metadata.putAll(metadata);
+  }
+
+  /**
+   * Returns the position of this part within the whole key, or null if the key was not read as one part.
+   * Left out of the JSON form of the key, such as the output of {@code ozone sh key info}.
+   */
+  @JsonIgnore
+  public OmPartRange getPartRange() {
+    return partRange;
+  }
+
+  public void setPartRange(OmPartRange partRange) {
+    this.partRange = partRange;
   }
 
   /**
